@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Guitar Simulator - Karplus-Strong</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <h1>Guitar Simulator</h1>
+        <div class="controls">
+          <button id="start-audio" class="primary">Start Audio</button>
+          <label class="toggle">
+            <input type="checkbox" id="mode-toggle" />
+            <span>Electric</span>
+          </label>
+          <label class="slider">
+            <span>Volume</span>
+            <input type="range" id="volume" min="-24" max="0" value="-6" step="1" />
+          </label>
+          <label class="slider">
+            <span>Reverb</span>
+            <input type="range" id="reverb" min="0" max="1" value="0.2" step="0.01" />
+          </label>
+          <label class="slider">
+            <span>Bend Range (semitones)</span>
+            <input type="range" id="bend-range" min="1" max="5" value="2" step="1" />
+          </label>
+        </div>
+      </header>
+
+      <main>
+        <div id="fretboard-container">
+          <div id="nut"></div>
+          <div id="fretboard"></div>
+          <div id="fret-markers"></div>
+        </div>
+      </main>
+
+      <footer>
+        <p>
+          Click a fret to pluck. Drag along a string to slide. Drag vertically to bend.
+          Toggle Electric for an overdriven tone. Karplus–Strong synthesis with smooth pitch using rampTo.
+        </p>
+      </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

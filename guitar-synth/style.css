@@ -1,0 +1,80 @@
+* { box-sizing: border-box; }
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --text: #e6eaf2;
+  --subtle: #9aa5b1;
+  --accent: #6aa6ff;
+  --accent-2: #b586ff;
+  --fret: #c8ccd4;
+  --string: #d6d6d6;
+  --string-dark: #aaa;
+  --marker: #ffffff22;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+#app { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+.app-header {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.app-header .spacer { flex: 1 1 auto; }
+.app-header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+button.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #081018; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 600;
+}
+button.primary:disabled { opacity: 0.6; cursor: not-allowed; }
+label.toggle { display: inline-flex; gap: 8px; align-items: center; background: var(--panel); padding: 6px 10px; border-radius: 8px; }
+label.slider { display: inline-flex; flex-direction: column; gap: 4px; background: var(--panel); padding: 6px 10px; border-radius: 8px; font-size: 12px; }
+label.slider input[type=range] { width: 160px; }
+.controls.secondary { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+
+main { margin-top: 16px; }
+#fretboard-container { position: relative; background: var(--board, #1b202a); border-radius: 12px; padding: 24px 16px 16px 32px; overflow: hidden; box-shadow: inset 0 0 0 1px #00000033, 0 20px 40px #00000055; }
+#nut { position: absolute; top: 24px; bottom: 16px; left: 16px; width: 8px; background: linear-gradient(#f4f4f4, #cfcfcf); border-radius: 4px; box-shadow: inset 0 0 0 1px #00000022; }
+#fretboard { position: relative; overflow-x: auto; overflow-y: hidden; padding-left: 24px; background-image: linear-gradient(180deg, #ffffff08, #0000000a); }
+#fretboard::-webkit-scrollbar { height: 10px; }
+#fretboard::-webkit-scrollbar-thumb { background: #2a3342; border-radius: 5px; }
+
+.fret-grid { display: grid; grid-auto-rows: 48px; gap: 0; position: relative; user-select: none; -webkit-user-select: none; touch-action: none; }
+.fret-row { display: contents; }
+.fret { position: relative; width: 72px; border-right: 2px solid var(--fret); background: #222833; cursor: pointer; box-shadow: inset 0 0 0 1px #00000022; }
+.fret.zero { background: #262d3a; }
+.fret:hover { background: #2b3443; }
+
+.string-line { position: absolute; left: 16px; right: 16px; height: 2px; background: linear-gradient(180deg, #ffffff, #c8c8c8); box-shadow: 0 0.5px 0 #00000055; transform-origin: left center; }
+.string-0 { top: calc(24px + 0 * 48px + 24px); height: 2.8px; }
+.string-1 { top: calc(24px + 1 * 48px + 24px); height: 2.6px; }
+.string-2 { top: calc(24px + 2 * 48px + 24px); height: 2.4px; }
+.string-3 { top: calc(24px + 3 * 48px + 24px); height: 2.2px; }
+.string-4 { top: calc(24px + 4 * 48px + 24px); height: 2.0px; }
+.string-5 { top: calc(24px + 5 * 48px + 24px); height: 1.8px; }
+
+.fret .note { position: absolute; bottom: 4px; left: 6px; font-size: 11px; color: var(--subtle); }
+.fret .pos { position: absolute; top: 2px; right: 6px; font-size: 10px; color: #7f8aa3; }
+
+#fret-markers { position: absolute; left: 16px; right: 16px; height: 24px; top: 0; display: grid; gap: 0; pointer-events: none; }
+.fret-marker { position: relative; height: 24px; }
+.fret-marker .dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #ffffff55; left: calc(50% - 4px); top: 8px; box-shadow: 0 1px 2px #00000055; }
+.fret-marker.double .dot { left: calc(50% - 16px); }
+.fret-marker.double .dot.second { left: calc(50% + 8px); }
+
+footer { color: var(--subtle); margin-top: 10px; font-size: 13px; }
+
+@media (max-width: 800px) {
+  .fret { width: 56px; }
+  .fret-grid { grid-auto-rows: 44px; }
+  .string-line { left: 12px; right: 12px; }
+}
+
+/* Themes */
+.theme-midnight { --board: #1b202a; --fret: #c8ccd4; --string: #e5e5e5; }
+.theme-rosewood { --board: #3a2320; --fret: #d9c5b5; --string: #f0eee9; }
+.theme-maple { --board: #d6bf91; --fret: #8f6f43; --string: #4a4a4a; }
+.theme-slate { --board: #2b2f3a; --fret: #c5cad3; --string: #e7e7e7; }

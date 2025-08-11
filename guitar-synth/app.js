@@ -5,63 +5,68 @@
   - Acoustic/Electric toggle (electric adds drive, chorus, reverb)
 */
 
-const NUM_STRINGS = 6;
-const NUM_FRETS = 22; // standard 22; easy to change
-const STANDARD_TUNING = [
-  "E2", // 6th string (index 0 visually bottom, but we render 0..5 top-to-bottom)
-  "A2",
-  "D3",
-  "G3",
-  "B3",
-  "E4", // 1st string
-];
+// ---- Reactive State ----
+const state = {
+  numStrings: 6,
+  numFrets: 22,
+  tuningName: "standard",
+  tuningNotes: ["E2", "A2", "D3", "G3", "B3", "E4"],
+  stringOpenFreqs: [],
+  fretFrequenciesPerString: [],
+};
+
+const TUNING_PRESETS = {
+  standard: ["E2", "A2", "D3", "G3", "B3", "E4"],
+  dropd: ["D2", "A2", "D3", "G3", "B3", "E4"],
+  dadgad: ["D2", "A2", "D3", "G3", "A3", "D4"],
+  openG: ["D2", "G2", "D3", "G3", "B3", "D4"],
+  openD: ["D2", "A2", "D3", "F#3", "A3", "D4"],
+};
 
 // Utility: note name to frequency via Tone.Frequency
-function noteToFreq(note) {
-  return Tone.Frequency(note).toFrequency();
-}
+function noteToFreq(note) { return Tone.Frequency(note).toFrequency(); }
 
-function semitoneDistance(freqA, freqB) {
-  return 12 * Math.log2(freqB / freqA);
+function recomputeFrequencies() {
+  state.stringOpenFreqs = state.tuningNotes.map(noteToFreq);
+  state.fretFrequenciesPerString = state.stringOpenFreqs.map((openFreq) => {
+    const freqs = [];
+    for (let fret = 0; fret <= state.numFrets; fret += 1) {
+      freqs.push(openFreq * Math.pow(2, fret / 12));
+    }
+    return freqs;
+  });
 }
-
-// Build fretboard data
-const stringOpenFreqs = STANDARD_TUNING.map(noteToFreq);
-const fretFrequenciesPerString = stringOpenFreqs.map((openFreq) => {
-  const freqs = [];
-  for (let fret = 0; fret <= NUM_FRETS; fret += 1) {
-    const freq = openFreq * Math.pow(2, fret / 12);
-    freqs.push(freq);
-  }
-  return freqs;
-});
+recomputeFrequencies();
 
 const noteNames = (() => {
   const names = [];
   const base = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   for (let midi = 0; midi < 128; midi += 1) {
-    const name = base[midi % 12] + Math.floor(midi / 12 - 1);
-    names.push(name);
+    names.push(base[midi % 12] + Math.floor(midi / 12 - 1));
   }
   return names;
 })();
-
 function freqToNoteName(frequency) {
   const midi = Math.round(69 + 12 * Math.log2(frequency / 440));
   return noteNames[Math.max(0, Math.min(127, midi))];
 }
 
-// UI Elements
+// ---- UI Elements ----
 const startBtn = document.getElementById("start-audio");
 const modeToggle = document.getElementById("mode-toggle");
 const volumeSlider = document.getElementById("volume");
 const reverbSlider = document.getElementById("reverb");
 const bendRangeSlider = document.getElementById("bend-range");
+const fretsCountSlider = document.getElementById("frets-count");
+const tuningPresetSelect = document.getElementById("tuning-preset");
+const boardColorInput = document.getElementById("board-color");
+const themeSelect = document.getElementById("theme-select");
+
 const fretboardContainer = document.getElementById("fretboard-container");
 const fretboardEl = document.getElementById("fretboard");
 const fretMarkersEl = document.getElementById("fret-markers");
 
-// Audio graph (initialized on user gesture)
+// ---- Audio graph (initialized on user gesture) ----
 let audioReady = false;
 let mixer = null;
 let masterLimiter = null;
@@ -76,29 +81,13 @@ let nextPointerId = 1;
 
 class KarplusStringVoice {
   constructor({ destination, electric }) {
-    // Excitation noise burst
     this.noise = new Tone.Noise({ type: "white" });
-    this.ampEnv = new Tone.AmplitudeEnvelope({
-      attack: 0.001,
-      decay: 0.2,
-      sustain: 0.0,
-      release: 0.08,
-    });
-
-    // Comb filter loop acts as the string
-    this.comb = new Tone.FeedbackCombFilter({
-      delayTime: 1 / 220, // temporary, set on trigger
-      resonance: 0.95, // energy retention (0..1)
-    });
-
-    // Gentle damping post-loop
-    this.damping = new Tone.Filter({ type: "lowpass", frequency: 6000, Q: 0 });
-
-    // Electric chain
+    this.ampEnv = new Tone.AmplitudeEnvelope({ attack: 0.001, decay: 0.22, sustain: 0.0, release: 0.1 });
+    this.comb = new Tone.FeedbackCombFilter({ delayTime: 1 / 220, resonance: 0.965 });
+    this.damping = new Tone.Filter({ type: "lowpass", frequency: 6200, Q: 0 });
     this.preFX = new Tone.Gain(1);
     this.postFX = new Tone.Gain(1);
 
-    // Connect graph: noise -> env -> preFX -> comb -> damping -> postFX -> destination
     this.noise.connect(this.ampEnv);
     this.ampEnv.connect(this.preFX);
     this.preFX.connect(this.comb);
@@ -106,41 +95,30 @@ class KarplusStringVoice {
     this.damping.connect(this.postFX);
     this.postFX.connect(destination);
 
-    // Always start noise; gated by envelope
     this.noise.start();
-
-    // Defaults
     this.currentFrequency = 220;
     this.electric = !!electric;
   }
-
   setMode({ electric }) {
     this.electric = !!electric;
-    // Adjust pre/post FX coloration
     if (this.electric) {
       this.preFX.gain.rampTo(1.0, 0.02);
       this.damping.frequency.rampTo(4500, 0.05);
     } else {
       this.preFX.gain.rampTo(1.0, 0.02);
-      this.damping.frequency.rampTo(6500, 0.05);
+      this.damping.frequency.rampTo(6800, 0.05);
     }
   }
-
-  trigger(frequency, velocity = 0.8) {
+  trigger(frequency, velocity = 0.85) {
     this.currentFrequency = frequency;
     const delay = 1 / frequency;
-    // Smoothly set pitch before excitation for crisp onset
     this.comb.delayTime.rampTo(delay, 0.002);
-    // Short burst
-    this.ampEnv.triggerAttackRelease(0.01, "+0", velocity);
+    this.ampEnv.triggerAttackRelease(0.012, "+0", velocity);
   }
-
-  bendTo(frequency, rampSeconds = 0.08) {
+  bendTo(frequency, rampSeconds = 0.065) {
     this.currentFrequency = frequency;
-    const delay = 1 / frequency;
-    this.comb.delayTime.rampTo(delay, rampSeconds);
+    this.comb.delayTime.rampTo(1 / frequency, rampSeconds);
   }
-
   dispose() {
     this.noise.stop();
     [this.noise, this.ampEnv, this.comb, this.damping, this.preFX, this.postFX].forEach((n) => n && n.dispose());
@@ -151,20 +129,15 @@ function setupAudio() {
   if (audioReady) return;
   audioReady = true;
 
-  // Global chain
   masterLimiter = new Tone.Limiter(-1);
-  reverb = new Tone.Reverb({ decay: 2.5, wet: parseFloat(reverbSlider.value) });
-  chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.2, wet: 0.2 }).start();
-  distortion = new Tone.Distortion({ distortion: 0.5, oversample: "4x", wet: 0.0 });
+  reverb = new Tone.Reverb({ decay: 2.6, wet: parseFloat(reverbSlider.value) });
+  chorus = new Tone.Chorus({ frequency: 1.6, delayTime: 3.4, depth: 0.22, wet: 0.2 }).start();
+  distortion = new Tone.Distortion({ distortion: 0.55, oversample: "4x", wet: 0.0 });
   outputGain = new Tone.Gain(Tone.dbToGain(parseFloat(volumeSlider.value)));
 
-  // Mixer route: mixer -> optional FX -> master
   mixer = new Tone.Gain(1);
-
-  // We will crossfade electric/acoustic by adjusting FX wet amounts during mode changes
   mixer.chain(chorus, distortion, reverb, masterLimiter, outputGain, Tone.Destination);
 
-  // Initialize wet to low unless Electric
   chorus.wet.value = 0.0;
   distortion.wet.value = 0.0;
 }
@@ -180,33 +153,40 @@ function setModeElectric(electric) {
     distortion.wet.rampTo(0.0, 0.1);
     reverb.wet.rampTo(parseFloat(reverbSlider.value), 0.1);
   }
+  // Update active voices coloration
+  activeVoices.forEach(({ voice }) => voice.setMode({ electric }));
 }
 
-// Render fretboard UI
+// ---- Fretboard rendering ----
 function buildFretboard() {
-  // grid: rows = strings, cols = frets 0..NUM_FRETS
+  // Clear previous strings and grid
+  fretboardEl.innerHTML = "";
+  // remove prior string-line children from container
+  Array.from(fretboardContainer.querySelectorAll(".string-line")).forEach((n) => n.remove());
+
+  // grid: rows = strings, cols = frets 0..state.numFrets
   const grid = document.createElement("div");
   grid.className = "fret-grid";
-  grid.style.gridTemplateColumns = `repeat(${NUM_FRETS + 1}, var(--fret-width, 72px))`;
+  grid.style.gridTemplateColumns = `repeat(${state.numFrets + 1}, var(--fret-width, 72px))`;
 
   // String lines backdrop
-  for (let s = 0; s < NUM_STRINGS; s++) {
+  for (let s = 0; s < state.numStrings; s++) {
     const line = document.createElement("div");
     line.className = `string-line string-${s}`;
     fretboardContainer.appendChild(line);
   }
 
   // Build cells
-  for (let s = 0; s < NUM_STRINGS; s++) {
+  for (let s = 0; s < state.numStrings; s++) {
     const row = document.createElement("div");
     row.className = "fret-row";
-    for (let f = 0; f <= NUM_FRETS; f++) {
+    for (let f = 0; f <= state.numFrets; f++) {
       const cell = document.createElement("div");
       cell.className = "fret" + (f === 0 ? " zero" : "");
       cell.dataset.string = String(s);
       cell.dataset.fret = String(f);
 
-      const noteFreq = fretFrequenciesPerString[s][f];
+      const noteFreq = state.fretFrequenciesPerString[s][f];
       const noteLabel = document.createElement("div");
       noteLabel.className = "note";
       noteLabel.textContent = freqToNoteName(noteFreq);
@@ -221,7 +201,6 @@ function buildFretboard() {
     grid.appendChild(row);
   }
 
-  fretboardEl.innerHTML = "";
   fretboardEl.appendChild(grid);
 
   // Fret markers at typical positions
@@ -229,16 +208,13 @@ function buildFretboard() {
 
   // Pointer interactions
   grid.addEventListener("pointerdown", onPointerDown);
-  grid.addEventListener("pointermove", onPointerMove);
-  window.addEventListener("pointerup", onPointerUp);
-  window.addEventListener("pointercancel", onPointerUp);
 }
 
 function buildFretMarkers() {
   const markerPositions = [3, 5, 7, 9, 12, 15, 17, 19];
-  fretMarkersEl.style.gridTemplateColumns = `24px repeat(${NUM_FRETS}, var(--fret-width, 72px))`;
+  fretMarkersEl.style.gridTemplateColumns = `24px repeat(${state.numFrets}, var(--fret-width, 72px))`;
   fretMarkersEl.innerHTML = "";
-  for (let f = 0; f <= NUM_FRETS; f++) {
+  for (let f = 0; f <= state.numFrets; f++) {
     const marker = document.createElement("div");
     marker.className = "fret-marker";
     if (markerPositions.includes(f)) {
@@ -269,10 +245,26 @@ function getCellFromEventTarget(target) {
   return { cell, stringIndex, fretIndex };
 }
 
-function makeVoiceKey(pointerId) {
-  return `p${pointerId}`;
+function makeVoiceKey(pointerId) { return `p${pointerId}`; }
+
+// ---- String visual animation ----
+function wobbleString(stringIndex, velocity = 0.9) {
+  const el = fretboardContainer.querySelector(`.string-${stringIndex}`);
+  if (!el || !el.animate) return;
+  const amp = Math.max(0.8, 2.8 * velocity);
+  el.animate(
+    [
+      { transform: "translateY(0px)" },
+      { transform: `translateY(${amp}px)` },
+      { transform: `translateY(${-amp * 0.6}px)` },
+      { transform: `translateY(${amp * 0.3}px)` },
+      { transform: "translateY(0px)" },
+    ],
+    { duration: 500, easing: "ease-out" }
+  );
 }
 
+// ---- Pointer handlers ----
 function onPointerDown(ev) {
   if (!audioReady) return;
   const info = getCellFromEventTarget(ev.target);
@@ -287,8 +279,9 @@ function onPointerDown(ev) {
   const voice = new KarplusStringVoice({ destination: mixer, electric });
   voice.setMode({ electric });
 
-  const freq = fretFrequenciesPerString[stringIndex][fretIndex];
-  voice.trigger(freq, 0.9);
+  const freq = state.fretFrequenciesPerString[stringIndex][fretIndex];
+  voice.trigger(freq, 0.92);
+  wobbleString(stringIndex, 1.0);
 
   activeVoices.set(voiceKey, {
     voice,
@@ -301,9 +294,7 @@ function onPointerDown(ev) {
   });
 
   // capture pointer to continue receiving events
-  if (info.cell && info.cell.setPointerCapture) {
-    info.cell.setPointerCapture(ev.pointerId);
-  }
+  if (info.cell && info.cell.setPointerCapture) info.cell.setPointerCapture(ev.pointerId);
 }
 
 function onPointerMove(ev) {
@@ -313,26 +304,24 @@ function onPointerMove(ev) {
   const entry = activeVoices.get(voiceKey);
   if (!entry) return;
 
-  const { voice, stringIndex, startFreq, startY, startX, startFret } = entry;
+  const { voice, stringIndex, startY, startX, startFret } = entry;
 
-  // Horizontal movement -> slide along frets on the same string
+  // Horizontal movement -> continuous slide in semitones
   const deltaX = ev.clientX - startX;
   const fretWidth = getFretWidthPx();
-  const fretDelta = deltaX / Math.max(24, fretWidth);
-  const continuousFret = clamp(startFret + fretDelta, 0, NUM_FRETS);
-  const openFreq = stringOpenFreqs[stringIndex];
+  const fretDelta = deltaX / Math.max(28, fretWidth);
+  const continuousFret = clamp(startFret + fretDelta, 0, state.numFrets);
+  const openFreq = state.stringOpenFreqs[stringIndex];
   const slideFreq = openFreq * Math.pow(2, continuousFret / 12);
 
   // Vertical movement -> bend up to N semitones
-  const bendRange = parseInt(bendRangeSlider.value, 10); // semitones
+  const bendRange = parseInt(bendRangeSlider.value, 10);
   const deltaY = startY - ev.clientY; // dragging up is positive
-  const bendSemitones = clamp((deltaY / 120) * bendRange, -0.2, bendRange); // allow slight down-bend
+  const bendSemitones = clamp((deltaY / 80) * bendRange, -1.0, bendRange);
   const bendRatio = Math.pow(2, bendSemitones / 12);
 
   const targetFreq = slideFreq * bendRatio;
-
-  // Smooth ramp
-  voice.bendTo(targetFreq, 0.06);
+  voice.bendTo(targetFreq, 0.05);
   entry.lastFreq = targetFreq;
 }
 
@@ -342,7 +331,7 @@ function onPointerUp(ev) {
   const entry = activeVoices.get(voiceKey);
   if (!entry) return;
 
-  // Let it decay naturally; then dispose a bit later to allow effect tails
+  wobbleString(entry.stringIndex, 0.6);
   const { voice } = entry;
   setTimeout(() => voice.dispose(), 1500);
   activeVoices.delete(voiceKey);
@@ -355,7 +344,7 @@ function getFretWidthPx() {
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-// Wire up controls
+// ---- Controls wiring ----
 startBtn.addEventListener("click", async () => {
   await Tone.start();
   setupAudio();
@@ -363,9 +352,7 @@ startBtn.addEventListener("click", async () => {
   startBtn.textContent = "Audio Ready";
 });
 
-modeToggle.addEventListener("change", () => {
-  setModeElectric(modeToggle.checked);
-});
+modeToggle.addEventListener("change", () => setModeElectric(modeToggle.checked));
 
 volumeSlider.addEventListener("input", () => {
   if (!audioReady) return;
@@ -377,5 +364,35 @@ reverbSlider.addEventListener("input", () => {
   reverb.wet.rampTo(parseFloat(reverbSlider.value), 0.1);
 });
 
-// Build UI now
+fretsCountSlider.addEventListener("input", () => {
+  state.numFrets = parseInt(fretsCountSlider.value, 10);
+  recomputeFrequencies();
+  buildFretboard();
+});
+
+tuningPresetSelect.addEventListener("change", () => {
+  state.tuningName = tuningPresetSelect.value;
+  state.tuningNotes = TUNING_PRESETS[state.tuningName] || TUNING_PRESETS.standard;
+  recomputeFrequencies();
+  buildFretboard();
+});
+
+boardColorInput.addEventListener("input", () => {
+  fretboardContainer.style.setProperty("--board", boardColorInput.value);
+});
+
+themeSelect.addEventListener("change", () => {
+  document.body.classList.remove("theme-midnight", "theme-rosewood", "theme-maple", "theme-slate");
+  const themeClass = `theme-${themeSelect.value}`;
+  document.body.classList.add(themeClass);
+});
+
+// Global pointer listeners to ensure smooth slide/bend even if pointer leaves the grid
+window.addEventListener("pointermove", onPointerMove);
+window.addEventListener("pointerup", onPointerUp);
+window.addEventListener("pointercancel", onPointerUp);
+
+// Initial UI
+document.body.classList.add("theme-midnight");
+fretboardContainer.style.setProperty("--board", boardColorInput.value);
 buildFretboard();
